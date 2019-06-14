@@ -146,10 +146,10 @@
      
  ``` 
  3.最终在BlockJoinScorer得出最终一篇父文档的得分和父文档的doc id，其中childApproximation和parentApproximation分别代表子文档和父文档匹配结果的迭代器
+  
   注：在索引的迭代器中 ，这里面既有nested的文档，也有parent的文档，nested文档和parent文档存储在一起并且只有parent文档会又source，举个例子，doc1 有三个nested，那么他们的id排序就是1,2,3,4（parent); doc2 有2个nested， 那么他们排序就是 5，6，7（parent），所以存在下面这个逻辑
-          
-   1.查看匹配的子文档id是否和大于等于父文档的id，如果不是则说明该子文档就是属于该父文档，则会对该子文档进行打分并且根据scoreMode 将分值赋予父文档
-   ```   
+  查看匹配的子文档id是否和大于等于父文档的id，如果不是则说明该子文档就是属于该父文档，则会对该子文档进行打分并且根据scoreMode 将分值赋予父文档
+ ```   
    if (childApproximation.docID() >= parentApproximation.docID()) {
         return;
       }
@@ -183,29 +183,29 @@
       this.score = (float) score;
       this.freq = freq;
     }
-     ``` 
-   
-   
-  4.在进行完成这些操作后就完成了父节点的匹配从而返回的匹配的父节点的文档id 
+``` 
+   4.在进行完成这些操作后就完成了父节点的匹配从而返回的匹配的父节点的文档id 
   
   总结，上面的流程经过试验速度在几十毫秒之内完成，速度很快
   
   ## fetch阶段
      
-     1.下面先是fetch的常规操作在fetch阶段首先拿到所有shard返回的docid和score，然后进行重排序，拿到真正的TopN的文档id，然后从每个shard中fetch真正的文档，但是在从索引中fetch真正文档的时候有些问题,其会根据每个父节点的id取出_source（注意这里取出source会将存储的source全部取出，所以虽然父文档不需要返回大字段chapters，其仍会取出，只不过在填充过后将其丢弃），将其填充到要返回的字段中，即_fileds，这里的问题就是一个我们一本书包含很多章节，每个章节又很长，这里他是把整本书内容给拉取了出来。
      
-   ``` 
+   1.下面先是fetch的常规操作在fetch阶段首先拿到所有shard返回的docid和score，然后进行重排序，拿到真正的TopN的文档id，然后从每个shard中fetch真正的文档，但是在从索引中fetch真正文档的时候有些问题,其会根据每个父节点的id取出_source（注意这里取出source会将存储的source全部取出，所以虽然父文档不需要返回大字段chapters，其仍会取出，只不过在填充过后将其丢弃），将其填充到要返回的字段中，即_fileds，这里的问题就是一个我们一本书包含很多章节，每个章节又很长，这里他是把整本书内容给拉取了出来。
+     
+  ``` 
    loadStoredFields(context, subReaderContext, fieldsVisitor, subDocId);
-    ``` 
+  ``` 
     
-    2.其实如果没有inner hit 这里就结束了，但有了innerhit这里性能会更慢，因为在query阶段只返回了父文档的得分，而在innerhit中的size为2就是说要返回子文档中的top2，这个在第一次query中虽然已经计算过一次但是并没有传递下来，所以这里会重新将匹配的子文档的得分在计算一遍
     
-     ``` 
+   2.其实如果没有inner hit 这里就结束了，但有了innerhit这里性能会更慢，因为在query阶段只返回了父文档的得分，而在innerhit中的size为2就是说要返回子文档中的top2，这个在第一次query中虽然已经计算过一次但是并没有传递下来，所以这里会重新将匹配的子文档的得分在计算一遍
+    
+ ``` 
     InnerHitsContext.InnerHitSubContext innerHits = entry.getValue();
     TopDocs[] topDocs = innerHits.topDocs(hits);   //这里重新计算了子文档的得分并只保留topn
  ```
  
- 3.在计算完能够获得到子文档的id，所以需要在对子id进行一次fetch，将子id需要的source填充到子doc中，,由于子文档是没有_source的 ，这里的_source会拉取整个父文档的_source,所以这里又进行了一次大字段chapters的拉取，最终通过填充到子文档匹配结果中chapter做高亮处理。
+  3.在计算完能够获得到子文档的id，所以需要在对子id进行一次fetch，将子id需要的source填充到子doc中，,由于子文档是没有_source的 ，这里的_source会拉取整个父文档的_source,所以这里又进行了一次大字段chapters的拉取，最终通过填充到子文档匹配结果中chapter做高亮处理。
      ``` 
       FieldsVisitor rootFieldsVisitor = new FieldsVisitor(needSource);
       loadStoredFields(context, subReaderContext, rootFieldsVisitor, rootSubDocId);
@@ -216,9 +216,9 @@
    
 #解决方案
 
-    1.不存储大文本的source，这样在拉取source时就不会存在慢的情况，但带来的弊端就是没法得到高亮的文档，高亮只会返回偏移，这就需要后端对偏移进行处理
+  1.不存储大文本的source，这样在拉取source时就不会存在慢的情况，但带来的弊端就是没法得到高亮的文档，高亮只会返回偏移，这就需要后端对偏移进行处理
     
-    2.使用join类型替代nest，join类型的实现方式和nest不同，其每个文档都会又自己的source，只不过会多存储反应子父文档关系的文档，但他也避免了nest存在的问题
+  2.使用join类型替代nest，join类型的实现方式和nest不同，其每个文档都会又自己的source，只不过会多存储反应子父文档关系的文档，但他也避免了nest存在的问题
     
 另：如果不使用ScoreMode.sum 的话查询结果会快一倍，主要是因为如果使用章节的总分作为书的分，则返回的的书都是章节巨多的那种，所以拉取的数据就大，而使用其他的的ScoreMode方式就返回很多章节数小的书所以返回速度会快，这也正说明了上述的理论
     
