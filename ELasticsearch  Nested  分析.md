@@ -209,10 +209,11 @@
  ```
  
   3.在计算完能够获得到子文档的id，所以需要在对子id进行一次fetch，将子id需要的source填充到子doc中，,由于子文档是没有_source的 ，这里的_source会拉取整个父文档的_source,所以这里又进行了一次大字段chapters的拉取，最终通过填充到子文档匹配结果中chapter做高亮处理。
-     ``` 
+     
+ ``` 
       FieldsVisitor rootFieldsVisitor = new FieldsVisitor(needSource);
       loadStoredFields(context, subReaderContext, rootFieldsVisitor, rootSubDocId);
-     ```
+ ```
      
    总结一下，上面的流程由于存在两次拉取chapters过程，而chapters存储的是整本书的文本内容，所以会耗费巨大的时间，为了更加直观
    举个栗子  按平均按每本书50个章节，查询结果需要返回20本书的top5个章节来算的话  他其实拉取的chapter达到了50*20*2=2000条  这必然是巨慢的
